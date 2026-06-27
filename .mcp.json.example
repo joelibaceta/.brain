@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "brain": {
+      "command": "YOUR_WORKSPACE/brain-gateway/.venv/bin/python3",
+      "args": ["YOUR_WORKSPACE/brain-gateway/main.py", "mcp"],
+      "env": {
+        "BRAIN_WORKSPACE": "YOUR_WORKSPACE",
+        "BRAIN_HTTP_PORT": "8181"
+      }
+    }
+  }
+}

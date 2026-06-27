@@ -1,0 +1,16 @@
+[Unit]
+Description=Brain Gateway HTTP Server
+After=network.target gitnexus-serve.service
+
+[Service]
+Type=simple
+User=YOUR_USER
+Environment=BRAIN_WORKSPACE=YOUR_WORKSPACE
+Environment=BRAIN_HTTP_PORT=8181
+ExecStart=YOUR_WORKSPACE/brain-gateway/.venv/bin/python3 YOUR_WORKSPACE/brain-gateway/main.py http
+Restart=on-failure
+RestartSec=5s
+WorkingDirectory=YOUR_WORKSPACE/brain-gateway
+
+[Install]
+WantedBy=multi-user.target

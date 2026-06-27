@@ -1,0 +1,15 @@
+[Unit]
+Description=GitNexus Code Knowledge Graph Server
+After=network.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+Environment=PATH=/home/YOUR_USER/.nodenv/versions/YOUR_NODE_VERSION/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/YOUR_USER/.npm/_npx/GITNEXUS_HASH/node_modules/.bin/gitnexus serve --port 4747
+Restart=on-failure
+RestartSec=5s
+WorkingDirectory=YOUR_WORKSPACE
+
+[Install]
+WantedBy=multi-user.target
