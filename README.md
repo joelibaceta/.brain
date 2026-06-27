@@ -14,110 +14,132 @@ Every time you start a session with an LLM inside a codebase, it starts from zer
 - It doesn't know how to connect to your infrastructure
 - It doesn't remember what was decided last week
 
-The typical solution is to dump context into the prompt. That scales poorly, costs tokens, and still misses the institutional knowledge that lives in your git history, your ADRs, and your head.
+And on top of that, your dev environment is scattered: code on one machine, tools on another, context lost every time you switch devices.
 
-**Brain is a different approach:** instead of feeding context to the LLM on every session, you build a persistent knowledge layer that sits alongside your workspace. The LLM queries it. The LLM reasons on top of it. The LLM never has to re-derive what Brain already knows.
-
----
-
-## Core idea
-
-```
-Traditional:   Code → LLM (re-derives everything, every time)
-
-Brain:         Code
-                 ↓
-               AST + Graph
-                 ↓
-               Knowledge
-                 ↓
-               LLM          (reasons on top of pre-extracted knowledge)
-```
-
-The Brain is **LLM-independent**. Claude, GPT, Qwen, Gemini — they all consume the same Brain. You switch models without losing context.
+Brain solves both problems.
 
 ---
 
-## Architecture
+## Two layers
 
-Brain is a set of engines that each solve a specific "why does the LLM have to figure this out?" problem.
+Brain is built in two independent layers:
 
 ```
-Workspace (multi-repo)
-        │
-        ▼
-┌─────────────────────────────┐
-│  GitNexus MCP               │  ← code structure layer (external)
-│  Tree-sitter + graph        │
-└─────────────────────────────┘
-        │
-        ▼
-┌─────────────────────────────┐
-│  Knowledge Engine           │  ← business domains extracted from code
-│  "how does this system work?"│
-└─────────────────────────────┘
-        │
-        ▼
-┌─────────────────────────────┐
-│  Playbook Engine            │  ← deterministic action sequences
-│  "how do I do X?"           │
-└─────────────────────────────┘
-        │
-        ▼
-┌─────────────────────────────┐
-│  Change Intelligence        │  ← git history with meaning
-│  "why does this code exist?"│
-└─────────────────────────────┘
-        │
-        ▼
-┌─────────────────────────────┐
-│  Environment Registry       │  ← "prod" → real hostnames/ports
-│  "where is prod?"           │
-└─────────────────────────────┘
-        │
-        ▼
-┌─────────────────────────────┐
-│  Conventions Engine         │  ← coding conventions per repo/language
-│  "how should I write this?" │
-└─────────────────────────────┘
-        │
-        ▼
-┌─────────────────────────────┐
-│  Session Priming            │  ← injects context at session start
-│  auto-generates CLAUDE.md   │
-└─────────────────────────────┘
-        │
-        ▼
-┌─────────────────────────────┐
-│  Engram Memory              │  ← conversations, decisions, bugs found
-│  "what did we decide?"      │  (external: github.com/Gentleman-Programming/engram)
-└─────────────────────────────┘
-        │
-        ▼
-┌─────────────────────────────┐
-│  Brain Gateway MCP          │  ← single interface for any LLM
-│  brain.query(...)           │
-└─────────────────────────────┘
+┌─────────────────────────────────────────┐
+│  LAYER 2 — Software                     │
+│  Knowledge engines that reduce LLM work │
+└─────────────────────────────────────────┘
+┌─────────────────────────────────────────┐
+│  LAYER 1 — Infrastructure               │
+│  Server-based dev environment           │
+│  Laptops as dumb terminals              │
+└─────────────────────────────────────────┘
 ```
 
 ---
 
-## Components explained
+## Layer 1 — Infrastructure (dumb terminals)
 
-### 1. GitNexus — code structure layer
+The core idea: **everything runs on the server, nothing on the laptop**.
 
-Instead of building a parser and graph engine from scratch, Brain uses [GitNexus](https://github.com/abhigyanpatwari/GitNexus) — an open-source MCP server that indexes any repository into a knowledge graph using Tree-sitter.
+```
+Server (NAS or any Linux box)
+├── All repos
+├── .brain/
+├── Brain Gateway    (always-on service)
+├── GitNexus MCP     (always-on service)
+├── Engram MCP       (always-on service)
+├── Claude Code CLI
+├── cloudflared      (Cloudflare Tunnel)
+└── tmux             (session persistence)
 
-What it gives you for free:
-- Full AST parsing across languages
-- Cross-file symbol resolution
-- Call graph and dependency graph
-- Leiden community clustering (auto-detects functional modules)
-- Blast radius analysis ("what breaks if I change X?")
-- Hybrid BM25 + semantic search over the graph
-- Multi-repo support via a global registry
+Cloudflare Tunnel (free tier, no open ports needed)
+├── ssh.yourdomain.com    → SSH into server
+├── brain.yourdomain.com  → Brain Gateway HTTP (monitoring)
+└── code.yourdomain.com   → code-server/IDE (optional)
 
-You never write a parser. You never build a graph database. GitNexus handles all of that and exposes it over MCP.
+Any device (laptop, tablet, phone)
+├── Terminal  →  ssh user@ssh.yourdomain.com
+├── Browser   →  https://brain.yourdomain.com/status
+└── IDE       →  VS Code Remote SSH (on local network)
+```
+
+### Why Cloudflare Tunnel
+
+No open ports on your router. The server makes an outbound connection to Cloudflare. You access it from anywhere via your domain. Free for personal use.
+
+### Why tmux
+
+SSH connections drop. Without tmux, your Claude session dies when the connection breaks. With tmux, the session lives on the server — you just re-attach:
+
+```bash
+ssh user@ssh.yourdomain.com
+tmux attach -t repo-a    # back exactly where you left off
+```
+
+### Session management per repo
+
+One tmux session per repo, created on-demand, destroyed on disconnect. Sessions don't stay alive when idle (they'd burn tokens). Context is saved to Engram and reloaded on reconnect.
+
+```bash
+brain connect repo-a     # creates session if needed, attaches if exists
+                         # injects context from last session automatically
+brain disconnect         # saves session summary to Engram, kills tmux session
+```
+
+Brain Gateway HTTP shows all session state from any browser:
+
+```
+GET brain.yourdomain.com/sessions
+
+{
+  "repo-a": { "status": "active",  "last_activity": "2 min ago" },
+  "repo-b": { "status": "idle",    "last_session": "yesterday" }
+}
+```
+
+---
+
+## Layer 2 — Software (knowledge engines)
+
+Instead of dumping context into every prompt, Brain pre-extracts and stores it. The LLM queries Brain. Brain answers. No re-derivation every session.
+
+```
+Server
+    │
+    ▼
+GitNexus MCP             — code structure, call graph, cross-repo resolution
+    │
+    ▼
+Knowledge Engine         — business domains extracted from code clusters
+    │
+    ▼
+Playbook Engine          — deterministic actions (SSH, DB tunnels, deploys)
+    │
+    ▼
+Change Intelligence      — git history with meaning ("why does this exist?")
+    │
+    ▼
+Environment Registry     — "prod" resolves to real hostnames/ports
+    │
+    ▼
+Conventions Engine       — coding conventions per repo and language
+    │
+    ▼
+Session Priming          — injects full context when a session starts
+    │
+    ▼
+Engram Memory            — conversations, decisions, bugs across sessions
+    │
+    ▼
+Brain Gateway MCP + HTTP — single interface for LLM (MCP) and browser (HTTP)
+```
+
+### GitNexus — code structure (external)
+
+[GitNexus](https://github.com/abhigyanpatwari/GitNexus) indexes repositories into a knowledge graph using Tree-sitter. It handles parsing, cross-file symbol resolution, dependency graphs, and Leiden community clustering. Multi-repo support out of the box.
+
+You don't build a parser. You don't build a graph database. GitNexus does it and exposes everything over MCP.
 
 ```bash
 npx gitnexus analyze    # index a repo
@@ -126,11 +148,9 @@ npx gitnexus setup      # configure MCP for Claude Code / Cursor
 
 > License: PolyForm Noncommercial — free for personal use.
 
-### 2. Knowledge Engine
+### Knowledge Engine
 
-GitNexus gives you structure. The Knowledge Engine extracts **meaning**.
-
-It queries GitNexus clusters and uses an LLM (at indexing time, not query time) to summarize them into business knowledge:
+Queries GitNexus clusters and uses an LLM (once, at indexing time) to summarize them into business knowledge stored as Markdown:
 
 ```yaml
 ---
@@ -138,169 +158,123 @@ domain: Authentication
 components: [LoginService, JwtService, OAuthController]
 dependencies: [Redis, PostgreSQL]
 exposes: [POST /login]
-conventions: [Refresh Token required]
 repos: [repo-a]
-last_indexed: 2026-06-27
 ---
-
 Every authentication flow ends by generating a JWT.
 Refresh tokens are stored in Redis with a 7-day TTL.
 ```
 
-Key constraint: **the LLM runs once at indexing time**. After that, knowledge is stored as Markdown + SQLite and served without any LLM call.
+Files are Obsidian-compatible — open `.brain/` as a vault for a visual knowledge graph.
 
-Knowledge files are Obsidian-compatible — open `.brain/` as a vault and you get a visual graph of your system's business domains.
+### Playbook Engine
 
-### 3. Playbook Engine
-
-The most immediate win. Playbooks are YAML files that describe deterministic action sequences — things the LLM would otherwise have to reason about every time.
+Deterministic YAML action sequences. The LLM decides what to do; Brain knows how to do it.
 
 ```yaml
 name: ssh-tunnel-db
-description: Open an SSH tunnel to a remote database
 parameters:
-  - name: env
-    required: true      # "prod", "staging" — resolved by Environment Registry
-  - name: database
-    required: true      # "postgres", "mysql"
+  - name: env       # "prod", "staging" — resolved by Environment Registry
+  - name: database  # "postgres", "mysql"
 steps:
   - type: shell
     run: ssh -N -L {{ local_port }}:{{ db_host }}:{{ db_port }} {{ ssh_user }}@{{ ssh_host }}
 ```
 
-The LLM doesn't figure out SSH flags. It doesn't remember hostnames. It calls `brain.playbooks.run("ssh-tunnel-db", { env: "prod", database: "postgres" })` and Brain executes it.
-
-Playbooks are scoped:
-- `playbooks/shared/` — cross-repo (SSH, DB connections, deploys)
-- `playbooks/repos/<name>/` — per-repo (run tests, migrate DB, build image)
-
-### 4. Change Intelligence
-
-Brain extracts meaning from git history so the LLM can answer "why does this code exist?" without doing `git blame` archaeology.
-
-Every significant change gets indexed as:
-
-```yaml
-type: fix
-date: 2026-06-15
-domains: [Authentication]
-components: [JwtService]
-summary: JWT tokens expired 1h early due to timezone offset in token generation
-root_cause: datetime.utcnow() instead of datetime.now(UTC)
-broke_before: POST /login returned 401 after ~23h with valid credentials
+```python
+brain.playbooks.run("ssh-tunnel-db", { env: "prod", database: "postgres" })
+# No SSH flags to remember. No hostname to look up.
 ```
 
-Then the LLM can ask:
+Scoped as `shared/` (cross-repo) or `repos/<name>/` (per-repo).
+
+### Change Intelligence
+
+Extracts meaning from git history so the LLM can answer "why does this code exist?" without git archaeology:
+
 ```python
 brain.history.why("auth/jwt_service.py", lines=45-52)
-# → "Added in PR #98 — hotfix for a race condition in token refresh"
-
-brain.history.fixes(repo="repo-a")
-# → all bug fixes, summarized
+# → "Added in PR #98 — hotfix for a race condition in token refresh under high load"
 ```
 
-### 5. Environment Registry
+### Environment Registry
 
-Playbooks and the LLM should never hardcode hostnames. The Environment Registry maps names to actual infrastructure:
+Maps environment names to real infrastructure. Playbooks resolve `env: prod` to actual hostnames, ports, and users automatically.
 
-```yaml
-# environments/prod.yaml
-name: prod
-databases:
-  postgres:
-    host: db.prod.internal
-    port: 5432
-    tunnel_via: bastion
-servers:
-  bastion: bastion.prod.internal
-```
+### Conventions Engine
 
-`brain.env.resolve("prod", "postgres")` returns the full connection params. Playbooks call it automatically.
+Coding conventions per repo/language stored as queryable YAML. The LLM calls `brain.conventions.list(repo)` before generating code.
 
-### 6. Conventions Engine
+### Session Priming
 
-Coding conventions are extracted from the codebase and stored as queryable YAML. The LLM calls `brain.conventions.list(repo="repo-a")` before generating code and follows them — without being reminded in the prompt every time.
+`brain.prime(repo)` aggregates domain context, conventions, recent changes, available playbooks, and Engram memory summary into a single session starter. Also auto-generates `CLAUDE.md` per repo that Claude Code reads on every session start.
 
-### 7. Session Priming
+### Engram — session memory (external)
 
-When a session starts in a repo, `brain.prime(repo)` returns:
-- Active domain
-- Relevant conventions
-- Recent changes
-- Available playbooks
-- Memory summary from last session
+[Engram](https://github.com/Gentleman-Programming/engram) stores conversations, decisions, and discoveries across sessions. SQLite + FTS5, zero external dependencies, MCP-compatible.
 
-Brain also auto-generates a `CLAUDE.md` in each repo root that Claude Code reads automatically on every session start.
+### Brain Gateway
 
-### 8. Engram — session memory
-
-[Engram](https://github.com/Gentleman-Programming/engram) provides persistent memory across sessions: conversations, decisions made, bugs found, preferences. SQLite + FTS5, zero external dependencies, MCP-compatible.
-
-It stores what *happened in sessions*. Change Intelligence stores what *happened in the code*. They're complementary.
-
-### 9. Brain Gateway
-
-A single MCP server that routes to all engines. Every LLM client talks only to Brain — never directly to GitNexus, SQLite, or Engram.
-
-```python
-brain.query(question)                     # routes to Knowledge + Memory + GitNexus
-brain.explain(symbol)                     # full context: knowledge + graph + history
-brain.history.why(file, lines)            # why does this code exist?
-brain.playbooks.run(name, params)         # execute deterministically
-brain.env.resolve(env, resource)          # resolve environment alias
-brain.conventions.list(repo)             # coding conventions
-brain.prime(repo)                         # session context injection
-```
-
----
-
-## Workspace layout
+Single Python process exposing two interfaces:
+- **MCP server** — for LLM clients (Claude Code, Cursor, etc.)
+- **HTTP server** — for browser monitoring
 
 ```
-Projects/
-├── repo-a/
-│   └── CLAUDE.md          ← auto-generated by brain.prime()
-├── repo-b/
-│   └── CLAUDE.md
-└── .brain/
-    ├── knowledge/          ← Obsidian vault (private, not committed)
-    ├── playbooks/
-    │   ├── shared/         ← cross-repo templates (committed here)
-    │   └── repos/          ← per-repo templates
-    ├── environments/       ← private, not committed
-    ├── conventions/        ← private, not committed
-    ├── history/            ← private, not committed
-    ├── memory/             ← Engram data, private
-    └── decisions/          ← ADRs, private
+GET  /status              → health of all components
+GET  /sessions            → active sessions per repo
+GET  /index/status        → indexed repos, freshness, errors
+GET  /logs?tail=50        → recent operations
+POST /index?repo=repo-a   → trigger re-index
 ```
 
 ---
 
 ## Technology stack
 
-| Layer | Tool | Why |
+| Layer | Tool | License |
 |---|---|---|
-| Code parsing + graph | GitNexus | Solves the hardest part — don't rebuild it |
-| Knowledge + Playbooks + Gateway | Built here | The differentiating layer |
-| Session memory | Engram | SQLite + MCP, zero deps |
-| Knowledge store | Markdown + SQLite | Human-readable, Obsidian-compatible, versionable |
-| Playbook store | YAML | Simple, inspectable, no runtime required |
+| Connectivity | Cloudflare Tunnel | Free |
+| Session persistence | tmux | Free |
+| Code parsing + graph | GitNexus | PolyForm Noncommercial |
+| Session memory | Engram | Open source |
+| Knowledge + Playbooks + Gateway | Built here | — |
+| Knowledge store | Markdown + SQLite | — |
+| Playbook / env / convention store | YAML | — |
 
-No Neo4j. No Qdrant. No cloud required. Runs entirely local.
+No Neo4j. No Qdrant. No cloud compute. Runs entirely on your own hardware.
+
+---
+
+## What lives in this repo
+
+Public methodology and templates only. Private workspace data stays local.
+
+```
+.brain/
+├── README.md            ← this file
+├── .gitignore           ← keeps all private data out
+└── playbooks/
+    └── shared/          ← operational templates ready to copy and customize
+        ├── ssh-run.yaml
+        ├── ssh-tunnel-db.yaml
+        ├── db-connect-postgres.yaml
+        ├── db-connect-mysql.yaml
+        └── check-service-logs.yaml
+```
+
+Private (never committed): `knowledge/`, `environments/`, `conventions/`, `history/`, `memory/`, `decisions/`, `SPEC.md`.
 
 ---
 
 ## How to copy this
 
-1. **Set up GitNexus** across your repos: `npx gitnexus analyze` in each one
-2. **Create `.brain/`** at the root of your workspace
-3. **Copy `playbooks/shared/`** from this repo as your starting templates
-4. **Build the Knowledge Engine** — query `gitnexus group_list`, run an LLM on each cluster, save as Markdown
-5. **Build the Brain Gateway** — a Python MCP server that routes `brain.*` calls to the right engine
-6. **Set up Engram** for session memory
-7. **Open `.brain/` in Obsidian** to browse your knowledge graph
-
-The playbooks in this repo are ready to use. Customize the parameters for your own infrastructure.
+1. **Set up the server** — any Linux box with SSH access
+2. **Set up Cloudflare Tunnel** — expose SSH and Brain Gateway HTTP via your domain
+3. **Install tmux** — for session persistence
+4. **Set up GitNexus** — `npx gitnexus analyze` in each repo
+5. **Copy `playbooks/shared/`** from this repo and customize for your infrastructure
+6. **Build Brain Gateway** — Python MCP + HTTP server routing `brain.*` calls
+7. **Set up Engram** — for session memory
+8. **Open `.brain/` in Obsidian** — browse your knowledge graph visually
 
 ---
 
