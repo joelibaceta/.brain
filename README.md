@@ -6,17 +6,37 @@
 
 ## Motivation
 
-I want to sit down at any device — a phone, a borrowed laptop, a tablet — open a terminal or a browser, and continue exactly where I left off. No git clone. No environment setup. No "which version of Node do I need?". No SSH keys to configure. No credentials to copy.
+### 1. Work from anywhere, on anything
 
-Everything lives in one place: the server. The context, the code, the agents, the access to databases and production environments. The laptop is just a screen and a keyboard.
+Sit down at any device — a phone, a borrowed laptop, a tablet — open a terminal or a browser, and continue exactly where you left off. No `git clone`. No environment setup. No "which version of Node do I need?". No SSH keys to configure. No credentials to copy over.
 
-This also solves a security problem I've always had: credentials and access to production systems scattered across multiple machines. With Brain, there's a single point of access — the server. Production databases, SSH keys, VPN configs — they never leave it. Every device connects to the server; the server connects to infrastructure. If a laptop gets lost, nothing is compromised.
+The laptop is just a screen and a keyboard. Everything else lives on the server.
+
+### 2. Real hardware where it matters
+
+A cheap laptop is enough when the actual compute happens remotely. The server can be as powerful as you need — and a NAS gives you incrementally expandable storage without limits. Add drives as your repos, history, and knowledge grow. Add a UPS and the server stays up regardless of power interruptions. Your dev environment becomes as reliable as infrastructure.
+
+### 3. Security in one place
+
+Credentials and access to production systems stop being scattered across every machine you own. With Brain, there is one point of access: the server. Production databases, SSH keys, API tokens — they never leave it. Every device connects to the server; the server connects to infrastructure.
+
+If a laptop gets stolen, nothing is compromised. Rotate one set of keys on one machine and you're done.
+
+### 4. Know-how that never disappears
+
+Every convention, every architectural decision, every bug fixed, every domain explained — stored in Brain, attached to your workspace. A new session on any device starts with full context. Switch models, switch devices, switch teams — the knowledge stays.
+
+### 5. Fewer tokens, lower cost
+
+LLMs are expensive when they re-derive the same context on every session. Brain pre-extracts and stores what the model needs to know. The model reasons; Brain remembers. Structural code queries that would cost thousands of tokens in file reads become a single `brain.query()` call answered from a local index.
+
+---
 
 **Brain is for anyone who:**
 - Works across multiple devices and is tired of syncing environments
-- Wants to work from a phone or a minimal setup without sacrificing capability
-- Wants a single, secure point of access to all their infrastructure
-- Uses LLMs heavily and is tired of re-explaining the codebase every session
+- Wants to work from a phone or minimal setup without sacrificing capability
+- Wants a single, secure point of access to all infrastructure
+- Uses LLMs heavily and wants to stop paying to re-explain the codebase
 - Runs a multi-repo workspace and wants one place that understands all of it
 
 ---
