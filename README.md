@@ -4,6 +4,23 @@
 
 ---
 
+## Motivation
+
+I want to sit down at any device — a phone, a borrowed laptop, a tablet — open a terminal or a browser, and continue exactly where I left off. No git clone. No environment setup. No "which version of Node do I need?". No SSH keys to configure. No credentials to copy.
+
+Everything lives in one place: the server. The context, the code, the agents, the access to databases and production environments. The laptop is just a screen and a keyboard.
+
+This also solves a security problem I've always had: credentials and access to production systems scattered across multiple machines. With Brain, there's a single point of access — the server. Production databases, SSH keys, VPN configs — they never leave it. Every device connects to the server; the server connects to infrastructure. If a laptop gets lost, nothing is compromised.
+
+**Brain is for anyone who:**
+- Works across multiple devices and is tired of syncing environments
+- Wants to work from a phone or a minimal setup without sacrificing capability
+- Wants a single, secure point of access to all their infrastructure
+- Uses LLMs heavily and is tired of re-explaining the codebase every session
+- Runs a multi-repo workspace and wants one place that understands all of it
+
+---
+
 ## The problem
 
 Every time you start a session with an LLM inside a codebase, it starts from zero:
