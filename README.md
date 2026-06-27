@@ -80,15 +80,16 @@ Brain is built in two independent layers:
 The core idea: **everything runs on the server, nothing on the laptop**.
 
 ```
-Server (NAS or any Linux box)
-├── All repos
-├── .brain/
+Home server (compute)
 ├── Brain Gateway    (always-on service)
 ├── GitNexus MCP     (always-on service)
 ├── Engram MCP       (always-on service)
 ├── Claude Code CLI
 ├── cloudflared      (Cloudflare Tunnel)
-└── tmux             (session persistence)
+├── tmux             (session persistence)
+└── /mnt/nas/        ← NAS mounted as local storage
+    ├── All repos
+    └── .brain/
 
 Cloudflare Tunnel (free tier, no open ports needed)
 ├── ssh.yourdomain.com    → SSH into server
@@ -422,4 +423,4 @@ claude   # brain_* tools load automatically from .mcp.json
 
 ## Status
 
-**Production.** Running on a home server accessible from anywhere via Cloudflare Tunnel.
+**Production.** Running on a home server with a NAS mounted as local storage (8TB+). All services run on the compute box; repos and knowledge live on the NAS. Accessible from anywhere via Cloudflare Tunnel.
