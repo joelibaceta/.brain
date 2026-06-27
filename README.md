@@ -422,4 +422,4 @@ claude   # brain_* tools load automatically from .mcp.json
 
 ## Status
 
-**Production.** Running on a NAS (HP ProDesk) accessible from anywhere via Cloudflare Tunnel.
+**Production.** Running on a home server accessible from anywhere via Cloudflare Tunnel.
