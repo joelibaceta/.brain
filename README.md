@@ -283,14 +283,36 @@ No Neo4j. No Qdrant. No cloud compute. Runs entirely on your own hardware.
 
 ## What lives in this repo
 
-Public methodology and templates only. Private workspace data stays local.
+Public methodology, templates, and the full Brain Gateway implementation.
 
 ```
 .brain/
-├── README.md            ← this file
-├── .gitignore           ← keeps all private data out
+├── README.md                    ← this file
+├── .gitignore                   ← keeps all private data out
+├── .mcp.json.example            ← Claude Code MCP config template
+├── brain-gateway/               ← Python MCP + HTTP server (the engine)
+│   ├── main.py                  ← entry point: mcp | http | both
+│   ├── requirements.txt
+│   ├── brain_cli.py             ← brain connect/disconnect/sessions CLI
+│   ├── brain/
+│   │   ├── config.py            ← env-based config (BRAIN_WORKSPACE, ports)
+│   │   ├── mcp_server.py        ← 19 MCP tools for LLM clients
+│   │   ├── engines/
+│   │   │   ├── gitnexus.py      ← code search, context, impact (GitNexus API)
+│   │   │   ├── knowledge.py     ← domain docs, QuinotoSpec import, FTS search
+│   │   │   ├── history.py       ← GitHub PRs/issues/commits via gh CLI
+│   │   │   ├── playbooks.py     ← YAML action executor with Jinja2
+│   │   │   ├── environments.py  ← service registry with auto-resolution
+│   │   │   └── sessions.py      ← tmux session management per repo
+│   │   └── http/
+│   │       └── server.py        ← monitoring HTTP server (aiohttp)
+│   └── scripts/
+│       └── extract_knowledge.py ← LLM-based domain extraction (optional)
+├── systemd/                     ← service templates for auto-start
+│   ├── brain-gateway.service
+│   └── gitnexus-serve.service
 └── playbooks/
-    └── shared/          ← operational templates ready to copy and customize
+    └── shared/                  ← operational templates
         ├── ssh-run.yaml
         ├── ssh-tunnel-db.yaml
         ├── db-connect-postgres.yaml
@@ -302,19 +324,102 @@ Private (never committed): `knowledge/`, `environments/`, `conventions/`, `histo
 
 ---
 
+## MCP Tools (19 total)
+
+Once connected, the LLM has access to:
+
+| Tool | What it does |
+|------|-------------|
+| `brain_query` | Natural language code search via GitNexus |
+| `brain_context` | 360° context for a symbol: callers, deps, cluster |
+| `brain_impact` | Blast radius — what breaks if this changes? |
+| `brain_repos` | List all indexed repositories |
+| `brain_knowledge_list` | List extracted domain knowledge documents |
+| `brain_knowledge_get` | Get a domain knowledge document |
+| `brain_knowledge_search` | Full-text search across all knowledge |
+| `brain_knowledge_prepare` | Read source code for LLM summarization |
+| `brain_knowledge_save` | Persist a knowledge document |
+| `brain_knowledge_domains` | List extractable domains for a repo |
+| `brain_knowledge_import_quinoto` | Import QuinotoSpec discovery docs |
+| `brain_history_fetch` | Sync PRs/commits/issues (staleness-aware) |
+| `brain_history_prs` | Fetch merged PRs from GitHub |
+| `brain_history_commits` | Fetch recent commits |
+| `brain_history_issues` | Fetch open and closed issues |
+| `brain_history_staleness` | Check how old the history files are |
+| `brain_playbooks_list` | List available playbooks |
+| `brain_playbooks_run` | Execute a playbook deterministically |
+| `brain_playbooks_search` | Find a playbook by description |
+| `brain_env_list` | List registered environments |
+| `brain_env_get` | Get full environment config |
+| `brain_env_resolve` | Resolve a service (db, api) from an environment |
+
+---
+
 ## How to copy this
 
-1. **Set up the server** — any Linux box with SSH access
-2. **Set up Cloudflare Tunnel** — expose SSH and Brain Gateway HTTP via your domain
-3. **Install tmux** — for session persistence
-4. **Set up GitNexus** — `npx gitnexus analyze` in each repo
-5. **Copy `playbooks/shared/`** from this repo and customize for your infrastructure
-6. **Build Brain Gateway** — Python MCP + HTTP server routing `brain.*` calls
-7. **Set up Engram** — for session memory
-8. **Open `.brain/` in Obsidian** — browse your knowledge graph visually
+### 1. Server setup
+
+Any Linux box with SSH. A NAS with an external drive is ideal for storage.
+
+```bash
+sudo apt install tmux git gh
+npm install -g gitnexus   # or: npx gitnexus
+```
+
+### 2. Cloudflare Tunnel
+
+```bash
+# Install cloudflared and create a tunnel
+cloudflared tunnel create my-tunnel
+# Add to /etc/cloudflared/config.yml:
+#   hostname: ssh.yourdomain.com  → ssh://127.0.0.1:22
+#   hostname: brain.yourdomain.com → http://127.0.0.1:8181
+sudo systemctl enable --now cloudflared
+```
+
+### 3. Clone and install Brain Gateway
+
+```bash
+git clone https://github.com/joelibaceta/.brain.git
+cd .brain/brain-gateway
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 4. Configure
+
+```bash
+export BRAIN_WORKSPACE=~/Projects   # root of all your repos
+export BRAIN_HTTP_PORT=8181
+```
+
+Copy `.mcp.json.example` to your workspace root as `.mcp.json` and fill in paths.
+
+### 5. Index your repos
+
+```bash
+cd ~/Projects/my-repo
+npx gitnexus analyze
+```
+
+### 6. Install as systemd services
+
+```bash
+# Edit systemd/*.service replacing YOUR_USER and YOUR_WORKSPACE
+sudo cp systemd/*.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now gitnexus-serve brain-gateway
+```
+
+### 7. Open Claude Code from your workspace
+
+```bash
+cd ~/Projects/my-repo
+claude   # brain_* tools load automatically from .mcp.json
+```
 
 ---
 
 ## Status
 
-Design complete. Implementation in progress.
+**Production.** Running on a NAS (HP ProDesk) accessible from anywhere via Cloudflare Tunnel.
