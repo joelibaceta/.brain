@@ -1,0 +1,21 @@
+name: check-service-logs
+description: Tail logs for a systemd service on a remote server
+scope: shared
+tags: [ssh, logs, monitoring]
+parameters:
+  - name: host
+    required: true
+    description: Target server hostname
+  - name: service
+    required: true
+    description: Systemd service name (e.g. auth-service, nginx)
+  - name: lines
+    required: false
+    default: "100"
+    description: Number of log lines to retrieve
+  - name: user
+    required: false
+    default: deploy
+steps:
+  - type: shell
+    run: ssh {{ user }}@{{ host }} "journalctl -u {{ service }} -n {{ lines }} --no-pager"

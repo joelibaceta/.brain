@@ -1,0 +1,36 @@
+name: ssh-tunnel-db
+description: >
+  Open an SSH tunnel to a remote database. After this runs, connect to
+  localhost:{{ local_port }} as if it were the remote database.
+scope: shared
+tags: [ssh, tunnel, database, postgres, mysql]
+parameters:
+  - name: ssh_host
+    required: true
+    description: SSH jump server hostname (e.g. bastion.prod.internal)
+  - name: ssh_user
+    required: false
+    default: deploy
+    description: SSH user on the jump server
+  - name: db_host
+    required: true
+    description: Database host as seen from the SSH server (e.g. db.internal, 10.0.0.5)
+  - name: db_port
+    required: false
+    default: "5432"
+    description: Database port on the remote side (5432 for Postgres, 3306 for MySQL)
+  - name: local_port
+    required: false
+    default: "{{ db_port }}"
+    description: Local port to bind the tunnel to
+steps:
+  - type: shell
+    run: >
+      echo "Tunnel open: localhost:{{ local_port }} → {{ db_host }}:{{ db_port }} via {{ ssh_user }}@{{ ssh_host }}" &&
+      ssh -N -L {{ local_port }}:{{ db_host }}:{{ db_port }} {{ ssh_user }}@{{ ssh_host }}
+
+# Usage after tunnel is open (in a separate terminal):
+# Postgres: psql -h localhost -p {{ local_port }} -U <user> -d <database>
+# MySQL:    mysql -h 127.0.0.1 -P {{ local_port }} -u <user> -p <database>
+#
+# Or combine with db-connect-postgres / db-connect-mysql using host=localhost

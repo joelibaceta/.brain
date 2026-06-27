@@ -1,0 +1,28 @@
+name: db-connect-mysql
+description: Open an interactive mysql session to a MySQL/MariaDB database
+scope: shared
+tags: [database, mysql, mariadb]
+parameters:
+  - name: host
+    required: true
+    description: Database host (e.g. localhost, db.prod.internal)
+  - name: port
+    required: false
+    default: "3306"
+    description: Database port
+  - name: database
+    required: true
+    description: Database name
+  - name: user
+    required: false
+    default: "${DB_USER}"
+    description: Database user — defaults to $DB_USER env var
+  - name: env_file
+    required: false
+    default: ".env"
+    description: Path to .env file to load credentials from
+steps:
+  - type: shell
+    run: >
+      set -a && source {{ env_file }} && set +a &&
+      mysql -h {{ host }} -P {{ port }} -u {{ user }} -p"${DB_PASSWORD}" {{ database }}

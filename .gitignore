@@ -1,0 +1,20 @@
+# Private workspace data — never commit
+environments/
+knowledge/
+conventions/
+history/
+memory/
+config/
+logs/
+
+# Specs and decisions — private for now
+SPEC.md
+decisions/
+
+# Runtime
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+__pycache__/
+.DS_Store
